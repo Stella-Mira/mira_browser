@@ -1,0 +1,60 @@
+# mira_browser 的 bundle 补丁：把 ai_browser 的 MCP 服务端接进 DSH。
+#
+# 两行，顺序**不能颠倒**：
+#   1. `mira-browser-dirs`（本包自带的 Host 半边）：apply 时**同步**建好运行期目录；
+#   2. `mcp-aibrowser`（随 dsh 安装的 MCP 客户端）：拉起 ai_browser 的 Python MCP 服务端，
+#      把 7 个工具注册成 `mcp__aibrowser__*`（serverName 是本地契约，决定模型看到的工具名）。
+#
+# 为什么需要第 1 行：MCP 客户端只负责 spawn，**不会创建环境变量指向的目录**，
+# 而 Playwright 只 mkdtemp、不建父目录 —— 目录不存在就报
+#   `EPERM: ... mkdtemp '<TEMP>/playwright-artifacts-XXXXXX'`
+# 并且会误导性地建议「请执行 playwright install chromium」（浏览器其实装好了）。
+#
+# 为什么用 stdio 而不是 http：ai_browser 的 mcp_server 默认就是 stdio（客户端拉起），
+# 免去常驻进程、端口与 Bearer 令牌三件事。
+#
+# 默认值取**本机 Linux 实测值**；Windows / 其它机器的值见 mira_browser/README.md
+# 「跨平台默认值」一节。三处路径都是「环境变量优先、默认兜底」，换机器只需设环境变量：
+#   MIRA_BROWSER_PY   ai_browser 所在的 python 解释器（venv 的 bin/python）
+#   MIRA_BROWSER_HOME ai_browser 仓库根目录（含 ai_browser/ 包，作为 cwd → sys.path）
+#   MIRA_BROWSER_PW   Playwright 浏览器目录（chromium 已装在里面）
+#   MIRA_BROWSER_PROFILES / MIRA_BROWSER_TMP  运行期目录（宿主与子进程都要能写）
+#
+# 目录默认值 = `$DSH_HOME/mira_config/mira_browser/browser/{profiles,tmp}`（任务书约定1：
+# 配置与状态一律放 $DSH_HOME/mira_config/<plugin>/）。**两行必须指向同一对目录**：
+#   · 本行（mira-browser-dirs）的 config.profilesDir/tmpDir 由 profile 层覆写；
+#   · 下一行的 env 由 profile 层覆写时，要跟着改；
+# 否则 MCP 浏览器工具与 collab_* 会各用一套浏览器档案（登录态不共享）。
+- insert:
+    - id: mira-browser-dirs
+      name: 'mira_browser'
+      config: {}
+
+    - id: mcp-aibrowser
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: aibrowser
+        transport: stdio
+        # 直接给解释器绝对路径。**不要**用 .cmd/.bat 包一层：Node 的 spawn 走 cmd.exe 时
+        # 内层引号会失效（路径含空格就崩），而 venv 的 python 本身就能跑 -m。
+        command: !!js "process.env.MIRA_BROWSER_PY || '/opt/ai-browser/.venv/bin/python'"
+        args: ['-m', 'ai_browser.mcp_server']
+        cwd: !!js "process.env.MIRA_BROWSER_HOME || '/opt/ai-browser'"
+        # 注意：这里的 env 是**在清洗过的环境之上**合并的（含 KEY|PASSWORD|SECRET|TOKEN|DSH_*
+        # 的环境变量会被丢掉，显式给的则保留），所以下面每一项都必须显式给。
+        env:
+          # Playwright 浏览器位置（chromium-1243 装在这里）
+          PLAYWRIGHT_BROWSERS_PATH: !!js "process.env.MIRA_BROWSER_PW || (process.env.HOME + '/.cache/ms-playwright')"
+          # 运行期目录：配置与状态一律 $DSH_HOME/mira_config/mira_browser/ 之下。
+          AI_BROWSER_PROFILES: !!js "process.env.MIRA_BROWSER_PROFILES || ((process.env.DSH_HOME || ((process.env.HOME || '~') + '/.dsh')) + '/mira_config/mira_browser/browser/profiles')"
+          TEMP: !!js "process.env.MIRA_BROWSER_TMP || ((process.env.DSH_HOME || ((process.env.HOME || '~') + '/.dsh')) + '/mira_config/mira_browser/browser/tmp')"
+          TMP: !!js "process.env.MIRA_BROWSER_TMP || ((process.env.DSH_HOME || ((process.env.HOME || '~') + '/.dsh')) + '/mira_config/mira_browser/browser/tmp')"
+          # 中文与 UTF-8：argv/stdout 两侧都要
+          PYTHONUTF8: '1'
+          PYTHONIOENCODING: 'utf-8'
+          # 与 skills/agent-chat/run.cmd 保持一致的实测配置
+          AI_BROWSER_STEALTH: '1'
+          AI_BROWSER_DOM_CLICK_FALLBACK: '1'
+        # 故意不设 failOnStartupError: true —— 解释器或仓库路径配错时，
+        # 它会让**整个插件激活失败**；宁可 DSH 正常启动、由日志暴露连不上，也不要开不了机。
+        failOnStartupError: false

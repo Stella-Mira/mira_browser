@@ -1,0 +1,40 @@
+{
+  "name": "mira_browser",
+  "version": "0.2.0",
+  "description": "DSH 浏览器与协作插件：把本机 ai_browser（Python + Playwright）的 MCP 服务端接进 DSH（mcp__aibrowser__*），并提供 collab_* 协作工具（手填 listen 监听、稳定别名表、两级回执、send_many、queue/inflight 可观测；投递默认插话）",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js"
+  },
+  "files": [
+    "lib",
+    "py",
+    "cordis.patch.yml"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "plugin",
+    "mcp",
+    "browser",
+    "playwright",
+    "ai-browser",
+    "collab",
+    "receipt",
+    "alias"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Stella-Mira/mira_browser.git"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "author": "Stella-Mira"
+}
